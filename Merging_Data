@@ -1,0 +1,42 @@
+import numpy as np
+import pandas as pd
+import seaborn as sns  
+import matplotlib.pyplot as plt 
+import nflreadpy as nfl #pip3 install nflreadpy
+import polars as pl # pip3 install polars
+
+
+player = pd.read_csv("/workspaces/DATA-505-FINAL-PROJECT/Data/Master-Player-List.csv") #change the pathing
+
+player_stats = nfl.load_player_stats(2024)
+rosters = nfl.load_rosters(2024)
+
+# merging players stats to roster info
+merging = player_stats.join(
+    rosters.select(['gsis_id', 'team', 'position', 'depth_chart_position']),
+    left_on="player_id",
+    right_on="gsis_id",
+    how = 'left'
+)
+
+# Convert to a dataframe
+merged_df = merging.to_pandas()
+
+# Normalizing names for matching
+player['Name_normalized'] = player['Name'].str.lower().str.replace(r'[^a-z\s]','', regex = True).str.strip()
+player['LastName'] = player['Name'].str.split().str[-1].str.lower()
+
+merged_df['player_name_normalized'] = merged_df['player_name'].str.lower().str.replace(r'[^a-z\s]','', regex = True).str.strip()
+merged_df['LastName'] = merged_df['player_name'].apply(lambda x: x.split()[-1].lower() if isinstance(x, str) else '')
+
+# Merge with master player list
+final_merged = merged_df.merge(
+    player[['Name', 'Team', 'CapHit', 'Age', 'YrsExp', 'Name_normalized', 'LastName']],
+    left_on=['player_name_normalized', 'LastName'],
+    right_on=['Name_normalized', 'LastName'],
+    how='left',
+    suffixes=('', '_right')
+)
+
+print(f"Total records: {len(final_merged)}")
+print(final_merged.head())
