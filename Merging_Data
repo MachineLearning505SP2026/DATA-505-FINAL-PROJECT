@@ -5,38 +5,66 @@ import matplotlib.pyplot as plt
 import nflreadpy as nfl #pip3 install nflreadpy
 import polars as pl # pip3 install polars
 
+years = [2022, 2023, 2024]
 
-player = pd.read_csv("/workspaces/DATA-505-FINAL-PROJECT/Data/Master-Player-List.csv") #change the pathing
+contracts = nfl.load_contracts()
+contracts_df = contracts.to_pandas()
 
-player_stats = nfl.load_player_stats(2024)
-rosters = nfl.load_rosters(2024)
+all_stats = []
+all_roster = []
+
+for years in years:
+    print(f'Loading data for {years}...')
+
+    player_stats = nfl.load_player_stats(years)
+    rosters = nfl.load_rosters(years)
+
+    all_stats.append(player_stats)
+    all_roster.append(rosters)
 
 # merging players stats to roster info
-merging = player_stats.join(
-    rosters.select(['gsis_id', 'team', 'position', 'depth_chart_position']),
-    left_on="player_id",
-    right_on="gsis_id",
-    how = 'left'
-)
+# Convert all to pandas first and concatenate
+player_stats_list = []
+for stats in all_stats:
+    player_stats_list.append(stats.to_pandas())
 
-# Convert to a dataframe
-merged_df = merging.to_pandas()
+rosters_list = []
+for roster in all_roster:
+    rosters_list.append(roster.to_pandas())
+
+player_stats_combined = pd.concat(player_stats_list, ignore_index=True)
+rosters_combined = pd.concat(rosters_list, ignore_index=True)
+
+# Merge player stats with rosters using pandas
+merged_df = player_stats_combined.merge(
+    rosters_combined[['gsis_id', 'team', 'position', 'depth_chart_position']],
+    left_on='player_id',
+    right_on='gsis_id',
+    how='left'
+)
 
 # Normalizing names for matching
-player['Name_normalized'] = player['Name'].str.lower().str.replace(r'[^a-z\s]','', regex = True).str.strip()
-player['LastName'] = player['Name'].str.split().str[-1].str.lower()
+contracts_df['player_normalized'] = contracts_df['player'].str.lower().str.replace(r'[^a-z\s]','', regex = True).str.strip()
+merged_df['player_name_normalized'] = merged_df['player_display_name'].str.lower().str.replace(r'[^a-z\s]','', regex = True).str.strip()
 
-merged_df['player_name_normalized'] = merged_df['player_name'].str.lower().str.replace(r'[^a-z\s]','', regex = True).str.strip()
-merged_df['LastName'] = merged_df['player_name'].apply(lambda x: x.split()[-1].lower() if isinstance(x, str) else '')
 
-# Merge with master player list
+# Merge with contracts
 final_merged = merged_df.merge(
-    player[['Name', 'Team', 'CapHit', 'Age', 'YrsExp', 'Name_normalized', 'LastName']],
-    left_on=['player_name_normalized', 'LastName'],
-    right_on=['Name_normalized', 'LastName'],
+    contracts_df[['player', 'player_normalized', 'value', 'apy', 'guaranteed', 'is_active', 'year_signed']],
+    left_on='player_name_normalized',
+    right_on='player_normalized', 
     how='left',
-    suffixes=('', '_right')
+    suffixes=('', '_contracts')
 )
 
-print(f"Total records: {len(final_merged)}")
 print(final_merged.head())
+
+# Export to CSV
+output_path = "/workspaces/DATA-505-FINAL-PROJECT/Data/nfl_player_contracts_stats.csv"
+final_merged.to_csv(output_path, index=False)
+print(f"\n✓ Data exported to: {output_path}")
+print(f"  File size: {len(final_merged)} rows")
+
+
+
+
